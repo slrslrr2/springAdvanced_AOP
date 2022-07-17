@@ -98,7 +98,8 @@ public class ProxyApplication {
 6. **빈 등록**: 반환된 객체는 스프링 빈으로 등록된다.
 
 
-
+<br><br>
+-------
 
 
 
