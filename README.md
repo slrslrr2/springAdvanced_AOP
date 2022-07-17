@@ -1,3 +1,111 @@
+
+
+스프링 애플리케이션에 프록시를 적용하려면 <br>포인트컷과 어드바이스(implements MethodInterceptor)로 구성되어 있는 <br>어드바이저 ( Advisor )를 만들어서 스프링 빈으로 등록하면 된다. <br>그러면 나머지는 앞서 배운 자동 프록시 생성기(AutoProxyCreate)가 모두 자동으로 처리해준다.
+
+# Aspect AOP
+
+## @Aspect AOP 적용
+
+@Aspect를 사용하면 Advice+Pointcut을 함께 적용하여 Advisor를 만들 수 있다.
+
+```java
+@Slf4j
+@Aspect
+public class LogTraceAspect {
+  private final LogTrace logTrace;
+
+  public LogTraceAspect(LogTrace logTrace) {
+    this.logTrace = logTrace;
+  }
+
+  @Around("execution(* hello.proxy.app..*(..))")
+  public Object excute(ProceedingJoinPoint joinPoint) throws Throwable{
+    // Advice 공통 로직들
+    // pointcut + advice => Advisor
+    TraceStatus status = null;
+    try{
+      String message = joinPoint.getSignature().toShortString();
+      status = logTrace.begin(message); // "OrderController.request()"
+
+      Object result = joinPoint.proceed();// 로직호출
+
+      logTrace.end(status);
+      return result;
+    } catch (Exception e){
+      logTrace.exception(status, e);
+      throw e;
+    }
+  }
+}
+```
+
+- **@Aspect** : 애노테이션 기반 프록시를 적용할 때 필요하다.
+- **@Around("execution(* hello.proxy.app..*(..))")**
+  - @Around 의 값에 포인트컷 표현식을 넣는다. 표현식은 AspectJ 표현식을 사용한다.
+  - **@Around 의 메서드**는 어드바이스( **Advice **)가 된다.
+- **ProceedingJoinPoint joinPoint** : 어드바이스에서 살펴본 MethodInvocation invocation과 유사한 기능이다. <br>내부에 실제 **호출 대상, 전달 인자, 그리고 어떤 객체와 어떤 메서드**가 호출되었는지 정보가 포함되어 있다.
+
+
+
+```java
+@Configuration
+@Import({AppV1Config.class, AppV2Config.class})
+public class AopConfig {
+  @Bean
+  public LogTraceAspect logTraceAspect(LogTrace logTrace) {
+    return new LogTraceAspect(logTrace);
+  }
+}
+```
+
+
+
+```java
+@Import(AopConfig.class)
+@SpringBootApplication(scanBasePackages = "hello.proxy.app")
+public class ProxyApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(ProxyApplication.class, args);
+  }
+  @Bean
+  public LogTrace logTrace() {
+    return new ThreadLocalLogTrace();
+  }
+}
+```
+
+
+
+--------
+
+# @Aspect 프록시 설명
+
+<img width="645" alt="image-20220711000723665" src="https://user-images.githubusercontent.com/58017318/179382177-686d6bb3-73ac-4256-8d00-81bacbc5fc97.png">
+
+앞서 자동 프록시 생성기를 학습할 때, <br>자동 프록시 생성기( AnnotationAwareAspectJ**AutoProxyCreator** )는<br> **Advisor 를 자동으로 찾아와서** 필요한 곳에 **프록시를 생성**하고 **적용**해준다고 했다. <br>자동 프록시 생성기는 여기에 추가로 하나의 역할을 더 하는데, 바로 **@Aspect** 를 찾아서 이것을 **Advisor 로 만들어준다.**<br>그래서 **이름 앞**에 **AnnotationAware** (애노테이션을 인식하는)가 붙어 있는 것이다.
+
+
+
+<img width="647" alt="image-20220711001556530" src="https://user-images.githubusercontent.com/58017318/179382182-a49d9910-a9f2-43e5-a543-f0db8fde8370.png">
+
+자동 프록시 생성기의 작동 과정을 알아보자
+
+1. **생성**: **스프링 빈 대상**이 되는 **객체를 생성**한다. ( **@Bean , 컴포넌트 스캔** 모두 포함)
+2. **전달**: 생성된 객체를 **빈 저장소에 등록하기 직전에 빈 후처리기에 전달**한다.
+3. 3-1. **Advisor 빈 조회**: 스프링 컨테이너에서 Advisor 빈을 모두 조회한다.<br>3-2. **@Aspect Advisor 조회:** @Aspect 어드바이저 빌더 내부에 저장된 Advisor 를 모두 조회한다. 
+4. **프록시 적용 대상 체크**: <br>앞서 3-1, 3-2에서 조회한 **Advisor 에 포함되어 있는 포인트컷**을 사용해서 해당 객체가 **프록시를 적용할 대상**인지 아닌지 **판단**한다. <br>이때 객체의 클래스 정보는 물론이고, 해당 객체의 모든 메서드를 포인트컷에 하나하나 모두 매칭해본다. <br>그래서 조건이 하나라도 만족하면 프록시 적용 대상이 된다. 예를 들어서 메서드 하나만 포인트컷 조건에 만족해도 프록시 적용 대상이 된다.
+5. **프록시 생성**: 프록시 적용 대상이면 프록시를 생성하고 프록시를 반환한다. 그래서 프록시를 스프링 빈으로 등록한다. 만약 프록시 적용 대상이 아니라면 원본 객체를 반환해서 원본 객체를 스프링 빈으로 등록한다.
+6. **빈 등록**: 반환된 객체는 스프링 빈으로 등록된다.
+
+
+
+
+
+
+
+
+
+
 # 스프링 AOP 개념
 
 ## 1.핵심기능과 부가기능
